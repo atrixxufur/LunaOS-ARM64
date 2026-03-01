@@ -10,6 +10,11 @@
  * This library wraps /dev/dri/card0 (created by IODRMShim.kext)
  * and presents the standard DRM API that Mesa/wlroots expect.
  */
+#define DRM_CAP_DUMB_BUFFER 0x1
+#define DRM_CAP_PRIME 0x2
+#define DRM_PRIME_CAP_EXPORT 0x1
+#define DRM_CAP_TIMESTAMP_MONOTONIC 0x3
+#define DRM_CAP_ADDFB2_MODIFIERS 0x4
 
 #include "libdrm-darwin.h"
 #include <stdio.h>
