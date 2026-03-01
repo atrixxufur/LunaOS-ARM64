@@ -1,0 +1,82 @@
+From: LunaOS Project <lunaos@puredarwin.org>
+Date: 2026-02-28
+Subject: [PATCH 2/4] agx: Darwin arm64 stub — Apple GPU Vulkan
+
+AGX is the Apple GPU in all Apple Silicon chips (M1/M2/M3/M4).
+The Asahi Linux project has an open-source AGX driver (Mesa "agx" gallium
+driver + DRM kernel driver). LunaOS can port this to Darwin once the
+AGXAccelerator IOKit KEXT is written.
+
+This stub:
+  - Compiles the agx Mesa driver for arm64 Darwin
+  - Probes for "agx" DRM driver name at VkCreateInstance time
+  - Falls back to lavapipe if AGX KEXT is not loaded
+  - Logs: "agx: Apple GPU not found via DRM. TODO_agx_kext: port
+    Asahi agx driver as Darwin KEXT. Falling back to lavapipe."
+
+Asahi reference: https://gitlab.freedesktop.org/asahi/mesa (agx branch)
+TODO_agx_kext: Port linux/drivers/gpu/drm/asahi → IOKit KEXT.
+  The Asahi team's drm-asahi kernel driver is the reference.
+  On Darwin, this needs to talk to AGXAccelerator (Apple's closed GPU fw).
+  Alternative: use IOAcceleratorFamily2 like macOS does (requires reverse eng).
+
+MoltenVK alternative: If AGX KEXT porting is too complex, MoltenVK
+provides Vulkan 1.2 over Metal on Apple Silicon with good performance.
+Enable with: brew install molten-vk
+---
+diff --git a/src/asahi/vulkan/agx_device.c b/src/asahi/vulkan/agx_device.c
+--- a/src/asahi/vulkan/agx_device.c
++++ b/src/asahi/vulkan/agx_device.c
+@@ -1,5 +1,42 @@
+ #include "agx_private.h"
+ 
++#ifdef MESA_DARWIN_ARM64
++/*
++ * Darwin arm64 AGX stub.
++ *
++ * AGX is Apple's GPU. On Linux (Asahi), the DRM driver is "asahi".
++ * On Darwin, there is no open DRM driver for AGX yet.
++ *
++ * Probe path: open /dev/dri/renderD128, check DRM_IOCTL_VERSION.
++ *   If driver name == "agx" or "asahi" → AGX KEXT loaded → proceed
++ *   Otherwise → return VK_ERROR_INCOMPATIBLE_DRIVER → lavapipe takes over
++ *
++ * MoltenVK path (alternative, works NOW on real Apple Silicon):
++ *   If libMoltenVK.dylib is found, the Vulkan loader will pick it up
++ *   automatically via its ICD manifest. No changes needed here.
++ *
++ * TODO_agx_kext: Steps to enable hardware AGX Vulkan on Darwin:
++ *   1. Port drm-asahi (https://github.com/AsahiLinux/linux tree,
++ *      drivers/gpu/drm/asahi) as an IOKit KEXT for Darwin/XNU
++ *   2. Or: wrap AGXAccelerator.kext (Apple's closed GPU firmware handler)
++ *      with an open DRM-compatible interface
++ *   3. Rename agx_icd.aarch64.json.disabled → agx_icd.aarch64.json
++ *   4. Mesa agx gallium + Vulkan driver activates automatically
++ */
++#include <fcntl.h>
++#include <sys/ioctl.h>
++#include "drm_darwin.h"
++
++static bool darwin_has_agx(void) {
++    int fd = open("/dev/dri/renderD128", O_RDWR | O_CLOEXEC);
++    if (fd < 0) return false;
++    char name[64] = {};
++    struct drm_version ver = { .name = name, .name_len = sizeof(name)-1 };
++    bool ok = (ioctl(fd, DRM_IOCTL_VERSION, &ver) == 0 &&
++               (strncmp(name, "agx", 3) == 0 ||
++                strncmp(name, "asahi", 5) == 0));
++    close(fd);
++    return ok;
++}
++
++VkResult agx_darwin_check_device(void) {
++    if (!darwin_has_agx()) {
++        mesa_loge("agx: Apple GPU not found via DRM.\n"
++                  "TODO_agx_kext: port Asahi agx driver as Darwin KEXT,\n"
++                  "or install MoltenVK (brew install molten-vk) for Metal-backed Vulkan.\n"
++                  "Falling back to lavapipe (software Vulkan 1.4).");
++        return VK_ERROR_INCOMPATIBLE_DRIVER;
++    }
++    return VK_SUCCESS;
++}
++#endif /* MESA_DARWIN_ARM64 */

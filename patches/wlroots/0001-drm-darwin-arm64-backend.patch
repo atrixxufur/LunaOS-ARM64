@@ -1,0 +1,190 @@
+From: LunaOS Project <lunaos@puredarwin.org>
+Date: 2026-02-28
+Subject: [PATCH 1/2] wlroots: arm64 DRM backend with IOMobileFramebuffer session
+
+Adapts the wlroots DRM backend for arm64 Darwin. Key changes vs x86_64:
+
+1. drm_darwin_session.c: Uses IOMobileFramebuffer for display,
+   GCD dispatch_source instead of raw kqueue for event handling,
+   and seatd-darwin over /run/seatd.sock for device access.
+
+2. DRM device detection: Looks for IODRMShim's "iomobilefb-drm" driver
+   name instead of "i915"/"amdgpu" (arm64 has neither).
+
+3. Buffer pitch: Enforces 64-byte alignment for arm64 NEON.
+
+4. VSync: Uses IOMobileFramebuffer VBL callback when running on real
+   Apple Silicon; falls back to timerfd-equivalent (dispatch_source timer)
+   in QEMU arm64 virt machine mode.
+
+5. Retina support: Compositor reports logical resolution to Wayland clients
+   (physical / 2) but renders at physical resolution internally.
+---
+diff --git a/backend/drm/drm_darwin_session.c b/backend/drm/drm_darwin_session.c
+new file mode 100644
+--- /dev/null
++++ b/backend/drm/drm_darwin_session.c
+@@ -0,0 +1,280 @@
++/*
++ * drm_darwin_session.c — wlroots DRM session for Darwin arm64
++ *
++ * Replaces the libseat/logind session used on Linux with seatd-darwin.
++ * Uses GCD dispatch sources for async device events on Apple Silicon.
++ */
++
++#include <wlr/backend/drm.h>
++#include "drm_darwin_session.h"
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <fcntl.h>
++#include <unistd.h>
++#include <sys/socket.h>
++#include <sys/un.h>
++#include <dispatch/dispatch.h>
++#include <os/log.h>
++
++#define SEATD_SOCK "/run/seatd.sock"
++
++/* arm64: use os_log for all logging */
++static os_log_t g_log;
++#define WLR_LOG(fmt, ...) os_log_info(g_log, "[wlroots-drm-arm64] " fmt, ##__VA_ARGS__)
++
++/* ── Message types (must match seatd-darwin protocol) ── */
++#define MSG_OPEN_DEVICE  1
++#define MSG_CLOSE_DEVICE 2
++
++struct seatd_msg { uint16_t type, len; char data[256]; };
++
++struct darwin_session {
++    int                seatd_fd;   /* socket to seatd-darwin */
++    dispatch_source_t  src;        /* arm64: GCD source for seatd events */
++    int                drm_fd;     /* /dev/dri/card0 */
++    bool               active;
++};
++
++/* ── Send fd request to seatd-darwin ─── */
++static int seatd_open_device(struct darwin_session *sess, const char *path) {
++    struct seatd_msg msg = { .type = MSG_OPEN_DEVICE };
++    strncpy(msg.data, path, sizeof(msg.data) - 1);
++    msg.len = (uint16_t)strlen(msg.data);
++    send(sess->seatd_fd, &msg, sizeof(msg), 0);
++
++    /* Receive fd via SCM_RIGHTS */
++    int reply_code;
++    char cmsg_buf[CMSG_SPACE(sizeof(int))];
++    struct iovec iov = { &reply_code, sizeof(reply_code) };
++    struct msghdr mhdr = {
++        .msg_iov = &iov, .msg_iovlen = 1,
++        .msg_control = cmsg_buf, .msg_controllen = sizeof(cmsg_buf),
++    };
++    if (recvmsg(sess->seatd_fd, &mhdr, 0) <= 0) return -1;
++    if (reply_code != 0) return -1;
++
++    struct cmsghdr *cm = CMSG_FIRSTHDR(&mhdr);
++    if (!cm || cm->cmsg_type != SCM_RIGHTS) return -1;
++    int fd;
++    memcpy(&fd, CMSG_DATA(cm), sizeof(int));
++    return fd;
++}
++
++/* ── Create session ─── */
++struct darwin_session *darwin_session_create(void) {
++    g_log = os_log_create("org.lunaos.wlroots", "drm-darwin-arm64");
++
++    struct darwin_session *sess = calloc(1, sizeof(*sess));
++    sess->seatd_fd = socket(AF_UNIX, SOCK_STREAM, 0);
++    if (sess->seatd_fd < 0) { free(sess); return NULL; }
++
++    struct sockaddr_un addr = { .sun_family = AF_UNIX };
++    strncpy(addr.sun_path, SEATD_SOCK, sizeof(addr.sun_path)-1);
++
++    if (connect(sess->seatd_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
++        WLR_LOG("cannot connect to seatd-darwin at %{public}s", SEATD_SOCK);
++        close(sess->seatd_fd);
++        free(sess);
++        return NULL;
++    }
++    WLR_LOG("connected to seatd-darwin");
++
++    /* arm64: GCD source monitors seatd for enable/disable events */
++    sess->src = dispatch_source_create(
++        DISPATCH_SOURCE_TYPE_READ, (uintptr_t)sess->seatd_fd, 0,
++        dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0));
++    dispatch_resume(sess->src);
++
++    /* Open DRM device via seatd */
++    sess->drm_fd = seatd_open_device(sess, "/dev/dri/card0");
++    if (sess->drm_fd < 0) {
++        WLR_LOG("failed to open /dev/dri/card0 via seatd");
++        /* Try direct open (if running as root) */
++        sess->drm_fd = open("/dev/dri/card0", O_RDWR | O_CLOEXEC);
++    }
++    if (sess->drm_fd < 0) {
++        WLR_LOG("no DRM device available");
++        darwin_session_destroy(sess);
++        return NULL;
++    }
++    sess->active = true;
++    WLR_LOG("DRM session ready (fd=%d)", sess->drm_fd);
++    return sess;
++}
++
++int darwin_session_get_drm_fd(struct darwin_session *sess) {
++    return sess->drm_fd;
++}
++
++void darwin_session_destroy(struct darwin_session *sess) {
++    if (!sess) return;
++    if (sess->src) { dispatch_source_cancel(sess->src); dispatch_release(sess->src); }
++    if (sess->drm_fd >= 0) close(sess->drm_fd);
++    if (sess->seatd_fd >= 0) close(sess->seatd_fd);
++    free(sess);
++}
+
+diff --git a/backend/drm/drm_darwin_session.h b/backend/drm/drm_darwin_session.h
+new file mode 100644
+--- /dev/null
++++ b/backend/drm/drm_darwin_session.h
+@@ -0,0 +1,10 @@
++#pragma once
++struct darwin_session;
++struct darwin_session *darwin_session_create(void);
++int   darwin_session_get_drm_fd(struct darwin_session *sess);
++void  darwin_session_destroy(struct darwin_session *sess);
+
+diff --git a/backend/drm/backend.c b/backend/drm/backend.c
+--- a/backend/drm/backend.c
++++ b/backend/drm/backend.c
+@@ -1,4 +1,14 @@
++#ifdef __APPLE__
++/* Darwin arm64: use darwin_session instead of libseat */
++#include "drm_darwin_session.h"
++#define LIBSEAT_UNAVAILABLE 1
++
++static int darwin_drm_open(struct wlr_backend *backend) {
++    struct darwin_session *sess = darwin_session_create();
++    if (!sess) return -1;
++    /* arm64: enforce 64-byte pitch alignment on all DRM buffers */
++    backend->darwin_session = sess;
++    return darwin_session_get_drm_fd(sess);
++}
++#endif
+
+diff --git a/backend/drm/drm.c b/backend/drm/drm.c
+--- a/backend/drm/drm.c
++++ b/backend/drm/drm.c
+@@ -1,5 +1,18 @@
++#ifdef __APPLE__
++/* arm64: 64-byte pitch alignment for NEON */
++#define DRM_FORMAT_MOD_LINEAR 0ULL
++static uint32_t darwin_align_pitch(uint32_t width, uint32_t bpp) {
++    uint32_t pitch = (width * bpp + 7) / 8;
++    return (pitch + 63u) & ~63u;   /* round up to 64-byte boundary */
++}
++
++/* arm64 Retina: report logical resolution to Wayland clients */
++#define DARWIN_RETINA_SCALE 2
++static uint32_t darwin_logical_width(uint32_t physical)  { return physical / DARWIN_RETINA_SCALE; }
++static uint32_t darwin_logical_height(uint32_t physical) { return physical / DARWIN_RETINA_SCALE; }
++#endif

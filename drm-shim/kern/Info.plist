@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  IODRMShim.kext/Contents/Info.plist — arm64 Apple Silicon
+
+  Key difference from x86_64 version:
+    IOProviderClass: IOMobileFramebuffer  (arm64)
+    vs
+    IOProviderClass: IOFramebuffer        (x86_64)
+
+  IOMobileFramebuffer is the display controller class on Apple Silicon Macs.
+  It is present in:
+    - M1, M2, M3, M4 MacBook Air/Pro
+    - M1/M2/M3 Mac Mini
+    - M1/M2 Mac Studio
+    - M1/M2 Mac Pro
+    - All Apple Silicon iPad/iPhone (though LunaOS targets Macs)
+
+  Entitlements required (see IODRMShim.entitlements):
+    com.apple.private.iomobilefb        — access IOMobileFramebuffer
+    com.apple.private.iokit.iomobilefb  — IOMobileFramebufferGetLayerDefaultSurface
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>org.lunaos.IODRMShim</string>
+
+    <key>CFBundleName</key>
+    <string>IODRMShim</string>
+
+    <key>CFBundleVersion</key>
+    <string>1.0.0</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+
+    <key>CFBundlePackageType</key>
+    <string>KEXT</string>
+
+    <key>CFBundleSignature</key>
+    <string>????</string>
+
+    <!-- arm64: link against IOMobileFramebuffer KPI -->
+    <key>OSBundleLibraries</key>
+    <dict>
+        <key>com.apple.kpi.bsd</key>
+        <string>22.0.0</string>
+        <key>com.apple.kpi.iokit</key>
+        <string>22.0.0</string>
+        <key>com.apple.kpi.mach</key>
+        <string>22.0.0</string>
+        <key>com.apple.kpi.libkern</key>
+        <string>22.0.0</string>
+        <!-- arm64 specific: IOMobileFramebuffer framework -->
+        <key>com.apple.iokit.IOMobileGraphicsFamily</key>
+        <string>1.0</string>
+    </dict>
+
+    <key>IOKitPersonalities</key>
+    <dict>
+        <!--
+          Primary personality: matches IOMobileFramebuffer on Apple Silicon.
+          This is the arm64 equivalent of the x86_64 IOFramebuffer personality.
+        -->
+        <key>IODRMShim-AppleSilicon</key>
+        <dict>
+            <key>CFBundleIdentifier</key>
+            <string>org.lunaos.IODRMShim</string>
+            <key>IOClass</key>
+            <string>IODRMShimArm64</string>
+
+            <!-- arm64: match IOMobileFramebuffer, not IOFramebuffer -->
+            <key>IOProviderClass</key>
+            <string>IOMobileFramebuffer</string>
+
+            <!-- Match the built-in display (probeScore ensures we don't override Apple's driver) -->
+            <key>IOProbeScore</key>
+            <integer>100</integer>
+
+            <key>IOMatchCategory</key>
+            <string>IODRMShim</string>
+
+            <!-- Only match built-in Apple Silicon displays -->
+            <key>IOPlatformSupport</key>
+            <string>AppleSilicon</string>
+        </dict>
+
+        <!--
+          QEMU personality: matches virtio-gpu on arm64 QEMU
+          Used for development/testing without real Apple Silicon hardware
+        -->
+        <key>IODRMShim-QEMU-Arm64</key>
+        <dict>
+            <key>CFBundleIdentifier</key>
+            <string>org.lunaos.IODRMShim</string>
+            <key>IOClass</key>
+            <string>IODRMShimArm64</string>
+            <key>IOProviderClass</key>
+            <string>IOPCIDevice</string>
+            <key>IOPCIMatch</key>
+            <string>0x10501af4</string>  <!-- virtio-gpu PCI ID -->
+            <key>IOProbeScore</key>
+            <integer>1000</integer>
+        </dict>
+    </dict>
+
+    <!-- arm64 only -->
+    <key>OSBundleRequired</key>
+    <string>Root</string>
+</dict>
+</plist>

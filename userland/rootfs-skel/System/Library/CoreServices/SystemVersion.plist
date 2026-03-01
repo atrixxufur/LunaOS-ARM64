@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>ProductName</key>       <string>LunaOS</string>
+    <key>ProductVersion</key>    <string>0.1.0</string>
+    <key>ProductBuildVersion</key><string>26A0001-arm64</string>
+    <key>ProductCPUType</key>    <string>arm64</string>
+    <key>ProductHardware</key>   <string>Apple Silicon</string>
+    <key>iOSSupportVersion</key> <string>26.0</string>
+</dict>
+</plist>

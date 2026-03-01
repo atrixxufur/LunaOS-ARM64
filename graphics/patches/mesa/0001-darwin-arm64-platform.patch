@@ -1,0 +1,35 @@
+From: LunaOS Project <lunaos@puredarwin.org>
+Date: 2026-02-28
+Subject: [PATCH 1/4] mesa: Darwin arm64 platform support
+
+arm64-specific Mesa platform changes:
+
+1. Target: aarch64-apple-darwin (not x86_64-apple-darwin)
+2. NEON: enable AArch64 NEON SIMD in llvmpipe/softpipe
+3. cpu_count: use sysctl hw.logicalcpu (same as x86_64 patch)
+4. AGX driver probe: check for "agx" DRM driver name (not i915/amdgpu)
+5. MoltenVK interop: optional Metal-backed Vulkan alongside lavapipe
+---
+diff --git a/meson.build b/meson.build
+--- a/meson.build
++++ b/meson.build
+@@ -1,5 +1,22 @@
+ project('mesa', ['c', 'cpp'], version: '26.0.0')
+ 
++_darwin = host_machine.system() == 'darwin'
++if _darwin
++  _arm64 = host_machine.cpu_family() == 'aarch64'
++  if _arm64
++    message('Mesa: LunaOS/Darwin arm64 build (Apple Silicon, Wayland+GBM, no X11)')
++    add_project_arguments('-DMESA_DARWIN=1', '-DMESA_DARWIN_ARM64=1',
++                          language: ['c', 'cpp'])
++    add_project_arguments('-DHAVE_LIBDRM', language: ['c', 'cpp'])
++    # Apple Silicon: enable NEON (standard on arm64, but be explicit)
++    add_project_arguments('-march=armv8-a+simd', '-mcpu=apple-m1',
++                          language: ['c', 'cpp'])
++    # Suppress noisy Darwin arm64 warnings
++    add_project_arguments('-Wno-gnu-zero-variadic-macro-arguments',
++                          '-Wno-deprecated-declarations',
++                          language: ['c', 'cpp'])
++  endif
++endif

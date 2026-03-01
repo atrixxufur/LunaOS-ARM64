@@ -1,0 +1,9 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include/libdrm
+
+Name: libdrm
+Description: LunaOS DRM library (arm64 — IOMobileFramebuffer backend)
+Version: 2.4.120
+Libs: -L${libdir} -ldrm
+Cflags: -I${includedir}

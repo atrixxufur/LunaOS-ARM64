@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.apple.Boot.plist — LunaOS arm64 Apple Silicon boot configuration
+
+  ARM64 BOOT CHAIN (very different from x86_64):
+  ═══════════════════════════════════════════════
+
+  x86_64 chain:
+    BIOS/EFI → GRUB2 → mach_kernel → launchd
+
+  arm64 Apple Silicon chain:
+    iBoot (Apple ROM, cannot modify)
+      → boot.efi (Apple bootloader, in EFI partition)
+        → kernelcache (XNU + prelinked KEXTs)
+          → launchd
+
+  KEY DIFFERENCE: iBoot is Apple's Stage 1 bootloader burned into the
+  Apple Silicon chip. It is NOT replaceable like GRUB is on x86_64.
+  iBoot verifies boot.efi's signature before loading it.
+
+  On LunaOS, we bypass iBoot's signature check via:
+    1. DFU mode + idevicerestore (for development)
+    2. OR: boot under macOS, then kexec into LunaOS kernel (experimental)
+    3. OR: use m1n1 (Asahi Linux's stage 2 bootloader) as an intermediate
+
+  RECOMMENDED TEST APPROACH: QEMU
+  ════════════════════════════════
+  Use QEMU's virt machine (not real Apple Silicon) for testing:
+    qemu-system-aarch64 -M virt -cpu cortex-a76
+  This loads the kernel directly, bypassing iBoot entirely.
+  No real Apple Silicon hardware needed until the OS is stable.
+
+  PRODUCTION APPROACH (real Apple Silicon):
+  ══════════════════════════════════════════
+  Integrate with m1n1 (https://github.com/AsahiLinux/m1n1):
+    m1n1 is a bootloader that runs after iBoot on Apple Silicon Macs
+    configured in "1 True Recovery" or "Permissive Security" mode.
+    It loads U-Boot or directly loads kernels.
+    The Asahi Linux team has already done this work for Linux — LunaOS
+    can use the same m1n1 integration.
+
+  BOOT ARGS for Apple Silicon (subset of x86_64 — some don't apply):
+  ════════════════════════════════════════════════════════════════════
+  amfi_get_out_of_my_way=1    — disable AMFI (Apple Mobile File Integrity)
+                                CRITICAL on arm64: without this, IODRMShim won't load
+  csr-active-config=0xFF      — disable SIP (same as x86_64)
+  kext-dev-mode=1             — allow developer KEXTs
+  cs_enforcement_disable=1    — disable code signing enforcement
+  -v                          — verbose boot
+  pmuflags=1                  — disable power management restrictions
+  PE_i_can_has_debugger=1     — enable kernel debugging via serial
+  serial=3                    — enable serial output (useful in QEMU)
+-->
+<plist version="1.0">
+<dict>
+    <key>Kernel</key>
+    <!-- arm64: kernelcache (prelinked) preferred over raw mach_kernel -->
+    <string>kernelcache</string>
+
+    <key>Kernel Flags</key>
+    <!-- arm64 CRITICAL: amfi_get_out_of_my_way=1 required for unsigned KEXTs -->
+    <string>amfi_get_out_of_my_way=1 csr-active-config=0xFF kext-dev-mode=1 cs_enforcement_disable=1 -v pmuflags=1 serial=3 PE_i_can_has_debugger=1</string>
+
+    <key>Graphics Mode</key>
+    <!-- Apple Silicon Retina: use logical resolution (physical is 2x) -->
+    <string>2560x1600x32</string>
+
+    <key>Timeout</key>
+    <string>3</string>
+
+    <key>OSVersion</key>
+    <string>LunaOS 0.1.0 (Darwin 26 / arm64)</string>
+
+    <key>Hibernate Mode</key>
+    <integer>0</integer>
+
+    <!--
+      arm64 specific: Apple Silicon memory layout
+      Kernel loads at 0xfffffff007004000 (KASLR base for arm64)
+      Physical memory starts at 0x200000000 on Apple Silicon
+    -->
+    <key>BootKCPath</key>
+    <string>/System/Library/Kernels/kernelcache</string>
+</dict>
+</plist>

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  IODRMShim.entitlements — arm64 Apple Silicon
+
+  ADDITIONAL entitlements required vs x86_64:
+
+  com.apple.private.iomobilefb
+    Allows calling IOMobileFramebufferGetLayerDefaultSurface() and
+    IOMobileFramebufferSwapBegin/End(). Without this, the KEXT can
+    match IOMobileFramebuffer but cannot access its display surface.
+
+  com.apple.private.iokit.iomobilefb
+    Allows linking against the IOMobileFramebuffer KPI symbols that
+    are not in the public com.apple.kpi.iokit surface.
+
+  com.apple.developer.kernel.increased-memory-limit
+    Apple Silicon has aggressive memory limits on KEXTs. Our dumb
+    buffer allocations can be large (1920x1080x4 = 8MB per buffer,
+    up to 256 buffers = 2GB). This entitlement raises the limit.
+
+  NOTE: On LunaOS, SIP is disabled (csr-active-config=0xFF), so
+  these entitlements are checked but not enforced. The KEXT will
+  load regardless. This annotation is for documentation purposes
+  and for future hardware Vulkan when SIP may be partially re-enabled.
+-->
+<plist version="1.0">
+<dict>
+    <!-- Standard KEXT entitlements -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!-- arm64 specific: IOMobileFramebuffer access -->
+    <key>com.apple.private.iomobilefb</key>
+    <true/>
+
+    <key>com.apple.private.iokit.iomobilefb</key>
+    <true/>
+
+    <!-- IOSurface access for display pipeline -->
+    <key>com.apple.private.iokit.iosurface</key>
+    <true/>
+
+    <!-- Memory limit increase for large dumb buffer pools -->
+    <key>com.apple.developer.kernel.increased-memory-limit</key>
+    <true/>
+
+    <!-- Power management (needed for display VBL sync) -->
+    <key>com.apple.private.iokit.iopowermanagement</key>
+    <true/>
+</dict>
+</plist>

@@ -1,0 +1,20 @@
+# /etc/fstab — LunaOS arm64 Apple Silicon
+#
+# arm64 note: Apple Silicon Macs use NVMe storage exposed as /dev/disk0
+# LunaOS boots from a disk image or NVMe partition.
+# QEMU arm64 virt machine: virtio-blk device appears as /dev/vda
+
+# Root filesystem (NVMe on Apple Silicon hardware)
+/dev/disk0s1   /          hfs    rw,noatime   0 1
+
+# Root filesystem (virtio-blk in QEMU arm64 virt machine)
+#/dev/vda1     /          hfs    rw,noatime   0 1
+
+# devfs (device nodes)
+devfs          /dev       devfs  rw           0 0
+
+# tmpfs for /run (runtime data, PIDs, sockets)
+tmpfs          /run       tmpfs  rw,size=128m 0 0
+
+# tmpfs for /tmp
+tmpfs          /tmp       tmpfs  rw,size=512m 0 0

@@ -1,0 +1,5 @@
+wheel:*:0:root,luna
+daemon:*:1:root
+staff:*:20:luna
+video:*:70:luna
+input:*:71:luna

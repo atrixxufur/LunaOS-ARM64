@@ -1,0 +1,60 @@
+From: LunaOS Project <lunaos@puredarwin.org>
+Date: 2026-02-28
+Subject: [PATCH 3/4] lavapipe: arm64 Darwin fixes
+
+arm64-specific lavapipe fixes (on top of x86_64 Darwin patch):
+
+1. shm_open replaces memfd_create (same as x86_64)
+2. kqueue/pipe replaces eventfd (same as x86_64)
+3. arm64 NEON: llvmpipe uses LLVM AArch64 backend with NEON
+   — no changes needed, LLVM auto-detects from -mcpu=apple-m1
+4. Wayland swapchain: wl_shm backed by dumb buffers (same as x86_64)
+5. Memory barriers: arm64 uses ISB/DSB instead of MFENCE
+   — LLVM handles this automatically via AArch64 backend
+---
+diff --git a/src/gallium/frontends/lavapipe/lp_device.c b/src/gallium/frontends/lavapipe/lp_device.c
+--- a/src/gallium/frontends/lavapipe/lp_device.c
++++ b/src/gallium/frontends/lavapipe/lp_device.c
+@@ -1,5 +1,20 @@
+ #include "lp_device.h"
+ 
++#if defined(MESA_DARWIN)
++#include <sys/mman.h>
++#include <fcntl.h>
++/* Darwin arm64: shm_open replaces memfd_create (same as x86_64 Darwin path) */
++static int darwin_memfd_create(const char *name, size_t size) {
++    char path[64];
++    snprintf(path, sizeof(path), "/lunaos-vk-%s-XXXXXX", name);
++    int fd = shm_open(path, O_RDWR | O_CREAT | O_EXCL, 0600);
++    if (fd < 0) return -1;
++    shm_unlink(path);
++    ftruncate(fd, (off_t)size);
++    return fd;
++}
++#define memfd_create(name, flags) darwin_memfd_create(name, 0x100000)
++#endif /* MESA_DARWIN */
+
+diff --git a/src/gallium/frontends/lavapipe/lp_semaphore.c b/src/gallium/frontends/lavapipe/lp_semaphore.c
+--- a/src/gallium/frontends/lavapipe/lp_semaphore.c
++++ b/src/gallium/frontends/lavapipe/lp_semaphore.c
+@@ -1,3 +1,24 @@
++#if defined(MESA_DARWIN)
++/* Darwin arm64: kqueue/pipe timeline semaphore (same as x86_64 Darwin path)
++ * arm64 note: kqueue is equally efficient on Apple Silicon as on x86_64.
++ * LLVM's AArch64 backend uses WFE (Wait For Event) for efficient spinning
++ * which kqueue leverages on Apple Silicon via the kernel scheduler. */
++#include <sys/event.h>
++#include <unistd.h>
++struct darwin_sem { int kq, pipe_r, pipe_w; uint64_t value; };
++static int darwin_sem_create(struct darwin_sem *s, uint64_t init) {
++    int fds[2]; pipe(fds);
++    s->pipe_r = fds[0]; s->pipe_w = fds[1];
++    s->kq = kqueue(); s->value = init;
++    struct kevent ev = {s->pipe_r, EVFILT_READ, EV_ADD, 0, 0, s};
++    kevent(s->kq, &ev, 1, NULL, 0, NULL);
++    return 0;
++}
++#define eventfd(v,f) ({ \
++    struct darwin_sem *_s = calloc(1, sizeof(*_s)); \
++    darwin_sem_create(_s, v); _s->pipe_r; })
++#endif /* MESA_DARWIN */

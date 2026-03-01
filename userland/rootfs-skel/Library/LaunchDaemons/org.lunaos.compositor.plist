@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  org.lunaos.compositor.plist — arm64 Apple Silicon
+  Starts luna-compositor at login via launchd.
+  arm64: KeepAlive ensures restart if compositor crashes.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>org.lunaos.compositor</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/etc/rc.lunaos</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin</string>
+        <key>WAYLAND_DISPLAY</key>
+        <string>wayland-0</string>
+        <key>XDG_RUNTIME_DIR</key>
+        <string>/run/user/501</string>
+        <key>WLR_RENDERER</key>
+        <string>pixman</string>
+        <!-- arm64: amfi bypass must be in boot-args, not env -->
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/var/log/luna-compositor.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/luna-compositor.log</string>
+</dict>
+</plist>

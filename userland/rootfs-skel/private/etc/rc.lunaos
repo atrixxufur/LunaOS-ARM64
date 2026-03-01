@@ -1,0 +1,96 @@
+#!/bin/sh
+# /etc/rc.lunaos — LunaOS arm64 startup script
+#
+# Runs after launchd init. Sets up the environment and starts
+# the display stack: IODRMShim → seatd → evdev-bridge → compositor → shell
+#
+# arm64 differences:
+#   - amfi_get_out_of_my_way must be set at boot (in com.apple.Boot.plist)
+#     so unsigned IODRMShim.kext loads before this script runs
+#   - IOMobileFramebuffer detected instead of IOFramebuffer
+#   - KEXT load order: IODRMShim.kext depends on IOMobileGraphicsFamily
+#   - /run/user/501 created (user 501 = primary user on Darwin arm64)
+#   - VK_ICD: use aarch64 ICD manifests (not x86_64)
+
+set -e
+export PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
+log() { echo "[rc.lunaos/arm64] $*"; }
+
+# ── System setup ──────────────────────────────────────────────────────────────
+log "LunaOS arm64 starting (Darwin $(uname -r))"
+hostname lunaos-arm64
+mkdir -p /run /run/user/501 /tmp /dev/input /dev/dri
+chmod 700 /run/user/501
+
+# ── arm64: Verify AMFI/SIP bypass was successful ─────────────────────────────
+# If IODRMShim didn't load, the display stack won't work
+if ! kextstat 2>/dev/null | grep -q "IODRMShim"; then
+    log "WARNING: IODRMShim.kext not loaded"
+    log "  Ensure boot-args contains: amfi_get_out_of_my_way=1"
+    log "  Check: nvram boot-args"
+    log "  Set:   nvram boot-args=\"amfi_get_out_of_my_way=1 csr-active-config=0xFF\""
+    log "  Then reboot and try again"
+else
+    log "IODRMShim.kext loaded — IOMobileFramebuffer DRM shim active"
+fi
+
+# ── arm64: Detect display type ────────────────────────────────────────────────
+if ioreg -l 2>/dev/null | grep -q "IOMobileFramebuffer"; then
+    log "IOMobileFramebuffer detected — Apple Silicon built-in display"
+    export LUNA_DISPLAY_TYPE=IOMobileFramebuffer
+elif ioreg -l 2>/dev/null | grep -q "virtio-gpu"; then
+    log "virtio-gpu detected — QEMU arm64 virt machine"
+    export LUNA_DISPLAY_TYPE=virtio
+else
+    log "Unknown display type — proceeding anyway"
+    export LUNA_DISPLAY_TYPE=unknown
+fi
+
+# ── Wayland environment ───────────────────────────────────────────────────────
+export WAYLAND_DISPLAY=wayland-0
+export XDG_RUNTIME_DIR=/run/user/501
+export WLR_RENDERER=pixman
+export WLR_BACKENDS=drm
+export LIBSEAT_BACKEND=seatd
+
+# arm64: use aarch64 ICD manifests for Vulkan
+export VK_ICD_FILENAMES=/usr/local/share/vulkan/icd.d/lvp_icd.aarch64.json
+# Uncomment to enable MoltenVK (Vulkan via Metal, real Apple GPU):
+# export VK_ICD_FILENAMES=/usr/local/share/vulkan/icd.d/MoltenVK_icd.json
+
+# arm64 Retina: force 2x scale in wlroots if display supports it
+export WLR_DRM_NO_ATOMIC=1  # avoid atomic modesetting issues on first boot
+
+# ── Start seatd ───────────────────────────────────────────────────────────────
+log "Starting seatd-darwin (arm64 GCD-based)"
+/usr/local/sbin/seatd-darwin -s /run/seatd.sock &
+SEATD_PID=$!
+sleep 0.5
+
+# ── Start evdev bridge ────────────────────────────────────────────────────────
+log "Starting darwin-evdev-bridge (IOHIDFamily → /dev/input, arm64 multitouch)"
+/usr/local/sbin/darwin-evdev-bridge &
+sleep 0.3
+
+# ── Start compositor ──────────────────────────────────────────────────────────
+log "Starting luna-compositor (arm64)"
+/usr/local/bin/luna-compositor &
+COMPOSITOR_PID=$!
+
+# Wait for socket
+for i in $(seq 1 20); do
+    [ -S "/run/user/501/${WAYLAND_DISPLAY}" ] && break
+    sleep 0.2
+done
+log "Wayland socket ready: $WAYLAND_DISPLAY"
+
+# ── luna-compositor launches luna-shell automatically ─────────────────────────
+# (see compositor/src/main.c — forks luna-shell after backend starts)
+log "LunaOS arm64 display stack running"
+log "  Scale: 2x (Retina) on Apple Silicon Retina displays"
+log "  Super key → launcher | Super+T → terminal | Super+Shift+E → exit"
+
+# Keep running
+wait $COMPOSITOR_PID
+log "Compositor exited — shutting down"
+kill $SEATD_PID 2>/dev/null || true

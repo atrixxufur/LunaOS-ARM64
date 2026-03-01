@@ -1,0 +1,43 @@
+From: LunaOS Project <lunaos@puredarwin.org>
+Date: 2026-02-28
+Subject: [PATCH 4/4] vulkan-loader: Darwin arm64 ICD discovery
+
+Same as x86_64 patch but ICD filenames use aarch64 suffix.
+The loader searches for both x86_64 and aarch64 manifests.
+---
+diff --git a/loader/loader.c b/loader/loader.c
+--- a/loader/loader.c
++++ b/loader/loader.c
+@@ -1,5 +1,22 @@
++#ifdef __APPLE__
++static const char * const darwin_icd_search_paths[] = {
++    "/usr/local/share/vulkan/icd.d",
++    "/usr/share/vulkan/icd.d",
++    "/etc/vulkan/icd.d",
++    NULL
++};
++/* arm64: look for both aarch64 and arm64 suffix manifests */
++static const char * const darwin_arm64_icd_suffixes[] = {
++    ".aarch64.json",
++    ".arm64.json",
++    ".json",
++    NULL
++};
++#endif
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1,5 +1,16 @@
+ cmake_minimum_required(VERSION 3.17)
++if(APPLE)
++  set(CMAKE_SHARED_LIBRARY_SUFFIX ".dylib")
++  set(BUILD_WSI_XCB_SUPPORT   OFF CACHE BOOL "" FORCE)
++  set(BUILD_WSI_XLIB_SUPPORT  OFF CACHE BOOL "" FORCE)
++  set(BUILD_WSI_WAYLAND_SUPPORT ON CACHE BOOL "" FORCE)
++  add_compile_definitions(LOADER_ENABLE_LINUX_SORT=0)
++  if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
++    add_compile_definitions(LOADER_DARWIN_ARM64=1)
++    message(STATUS "Vulkan Loader: Darwin arm64 (Apple Silicon)")
++  endif()
++endif()

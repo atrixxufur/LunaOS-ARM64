@@ -1,0 +1,80 @@
+# LunaOS arm64 userland component list
+# Format: repo_name:tag[:optional_note]
+# All from apple-oss-distributions @ macos-262, built for arm64 (AARCH64)
+#
+# arm64 differences from x86_64:
+#   - No IOFramebuffer / IOGraphicsFamily (x86 only)
+#   - Add IOMobileGraphicsFamily (arm64 display stack)
+#   - Add IOSurface (required for IOMobileFramebuffer display pipeline)
+#   - Compiler: clang -arch arm64 (LLVM AArch64 backend)
+#   - No IOAPIC / x86 PM components
+#   - Add AppleARM platform kext
+
+# ── C runtime ──────────────────────────────────────────────────────────────
+Libc:macos-262
+libcxx:macos-262
+libcxxabi:macos-262
+libunwind:macos-262
+libpthread:macos-262
+libplatform:macos-262
+libdispatch:macos-262       # GCD — more critical on arm64 (QoS scheduler)
+dyld:macos-262
+ld64:macos-262
+
+# ── Kernel / boot ──────────────────────────────────────────────────────────
+xnu:macos-262               # arm64 RELEASE_ARM64 target
+BootX:macos-262             # boot.efi for Apple Silicon
+dtrace:macos-262            # ctfconvert, ctfmerge
+
+# ── Foundation / CoreFoundation ────────────────────────────────────────────
+CF:macos-262
+objc4:macos-262
+ICU:macos-262
+
+# ── IOKit ──────────────────────────────────────────────────────────────────
+IOKitUser:macos-262
+xpc:macos-262
+launchd:macos-262
+
+# ── KEXTs — arm64 specific ─────────────────────────────────────────────────
+# NOTE: IOFramebuffer and IOGraphicsFamily are x86_64 only.
+# arm64 display is driven by IOMobileFramebuffer via IOMobileGraphicsFamily.
+IOMobileGraphicsFamily:macos-262   # arm64 display controller (replaces IOGraphicsFamily)
+IOSurface:macos-262                # IOSurface — required for IOMobileFramebuffer pipeline
+IOHIDFamily:macos-262              # Keyboard, mouse, trackpad input
+IOStorageFamily:macos-262          # Disk I/O
+IONetworkingFamily:macos-262       # Network drivers
+IOACPIFamily:macos-262             # ACPI (present on Apple Silicon via ACPI tables)
+IOPlatformPluginFamily:macos-262   # Platform power management
+
+# ── Shell / CLI tools ──────────────────────────────────────────────────────
+shell_cmds:macos-262        # sh, bash, ls, cat, etc.
+file_cmds:macos-262         # cp, mv, rm, mkdir
+text_cmds:macos-262         # grep, sed, awk
+network_cmds:macos-262      # ifconfig, ping
+adv_cmds:macos-262          # ps, top
+system_cmds:macos-262       # sysctl, kextload, kextstat
+basic_cmds:macos-262
+
+# ── Libraries ──────────────────────────────────────────────────────────────
+zlib:macos-262
+bzip2:macos-262
+libxml2:macos-262
+ncurses:macos-262
+OpenSSL:macos-262           # for SSH / TLS
+curl:macos-262
+OpenSSH:macos-262
+
+# ── Wayland stack (built from source by build-compositor.sh) ───────────────
+# wayland:          built from wayland.freedesktop.org — arm64 via meson
+# wayland-protocols: built from wayland.freedesktop.org
+# wlroots:          built from gitlab.freedesktop.org, with arm64 patches
+# libxkbcommon:     built from xkbcommon.org — arm64 natively supported
+# pixman:           built from pixman.freedesktop.org — NEON optimized on arm64
+
+# ── Graphics (built from source by build-graphics.sh) ──────────────────────
+# LLVM 18:          arm64 AArch64 backend (Mesa requires this for llvmpipe)
+# Mesa 26:          llvmpipe (NEON), lavapipe (Vulkan 1.4), virgl, agx-stub
+# Vulkan-Headers:   1.4.304
+# Vulkan-Loader:    1.4.304, arm64 patch applied
+# MoltenVK:         optional, provides Vulkan via Metal on real Apple Silicon

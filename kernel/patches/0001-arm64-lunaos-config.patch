@@ -1,0 +1,73 @@
+From: LunaOS Project <lunaos@puredarwin.org>
+Date: 2026-02-28
+Subject: [PATCH 1/3] xnu: arm64 LunaOS configuration — CSR + IOMobileFramebuffer
+
+arm64-specific changes vs x86_64 patch:
+
+1. CSR disable — same as x86_64 (SIP off for unsigned KEXTs)
+
+2. IOMobileFramebuffer API promotion:
+   On arm64, we promote IOMobileFramebufferGetLayerDefaultSurface and
+   IOMobileFramebufferSwapBegin/End to the public IOMobileGraphicsFamily
+   KPI so IODRMShim can link without com.apple.kpi.unsupported.
+
+3. Boot args: add "amfi_get_out_of_my_way=1" which disables AMFI
+   (Apple Mobile File Integrity) on Apple Silicon. On x86_64, kext-dev-mode=1
+   was sufficient, but arm64 Apple Silicon also checks AMFI.
+
+4. Secure Boot bypass: Apple Silicon has a hardware Secure Boot chain
+   (iBoot → kernel → KEXTs). LunaOS sets boot-args to disable these
+   checks so unsigned IODRMShim.kext loads:
+     - amfi_get_out_of_my_way=1  (AMFI bypass)
+     - cs_enforcement_disable=1  (code signing bypass)
+     - PE_i_can_has_debugger=1   (enable kernel debugging)
+---
+diff --git a/bsd/sys/csr.h b/bsd/sys/csr.h
+--- a/bsd/sys/csr.h
++++ b/bsd/sys/csr.h
+@@ -1,4 +1,14 @@
++#ifdef LUNAOS
++/* LunaOS arm64: disable all SIP/CSR checks.
++ * Apple Silicon has additional AMFI checks beyond CSR.
++ * Both are disabled via boot-args and this compile-time override. */
++#define csr_check(mask)               (0)    /* always allowed */
++#define csr_check_allow_all()         (1)
++#define amfi_get_out_of_my_way        1      /* AMFI bypass for arm64 */
++#endif
+
+diff --git a/EXTERNAL_HEADERS/corecrypto/cc_config.h b/EXTERNAL_HEADERS/corecrypto/cc_config.h
+--- a/EXTERNAL_HEADERS/corecrypto/cc_config.h
++++ b/EXTERNAL_HEADERS/corecrypto/cc_config.h
+@@ -1,3 +1,8 @@
++#ifdef LUNAOS
++/* Disable CoreCrypto enforcement on LunaOS arm64.
++ * corecrypto normally enforces FIPS compliance which rejects
++ * self-signed KEXTs. Disabled for development. */
++#define CC_FIPS_SERVICE_INDICATOR_AVAILABLE 0
++#endif
+
+diff --git a/iokit/Families/IOGraphics/IOMobileFramebuffer.cpp b/iokit/Families/IOGraphics/IOMobileFramebuffer.cpp
+--- a/iokit/Families/IOGraphics/IOMobileFramebuffer.cpp
++++ b/iokit/Families/IOGraphics/IOMobileFramebuffer.cpp
+@@ -1,5 +1,15 @@
++/*
++ * LunaOS arm64 patch: promote IOMobileFramebuffer display APIs to public KPI.
++ * These are needed by IODRMShim to blit DRM dumb buffers to the display.
++ */
+ #include <IOKit/graphics/IOMobileFramebuffer.h>
+ 
++/* Promote GetLayerDefaultSurface — IODRMShim uses this to get display IOSurface */
++kern_return_t IOMobileFramebufferGetLayerDefaultSurface(
++    IOMobileFramebufferRef fb, int layer, IOSurfaceRef *surface)
++__attribute__((visibility("default")));  /* LunaOS: was hidden */
++
++/* Promote Swap functions — needed for VSync signaling */
++kern_return_t IOMobileFramebufferSwapBegin(IOMobileFramebufferRef, void*)
++__attribute__((visibility("default")));
++kern_return_t IOMobileFramebufferSwapEnd(IOMobileFramebufferRef)
++__attribute__((visibility("default")));
++
++/* Promote GetDisplaySize — needed to read Retina resolution */
++kern_return_t IOMobileFramebufferGetDisplaySize(
++    IOMobileFramebufferRef, IOMobileFramebufferDisplaySize*)
++__attribute__((visibility("default")));
