@@ -17,7 +17,7 @@ replacing Quartz Compositor with a custom Wayland stack.
 ├──────────────────────────────────────────────────────────────────┤
 │  Glue: IODRMShim.kext · seatd-darwin (GCD) · evdev-bridge       │
 ├──────────────────────────────────────────────────────────────────┤
-│  Kernel: XNU macos-262 (RELEASE_ARM64) · kernelcache            │
+│  Kernel: XNU xnu-11417+ (RELEASE_ARM64) · kernelcache            │
 ├──────────────────────────────────────────────────────────────────┤
 │  Hardware: Apple Silicon M1/M2/M3/M4 · IOMobileFramebuffer      │
 └──────────────────────────────────────────────────────────────────┘

@@ -1,6 +1,6 @@
 # kernel-config.mk — LunaOS XNU build configuration (arm64 / Apple Silicon)
 
-MACOS_TAG          := macos-262
+XNU_TAG            := xnu-11417.140.69  # macOS 15 Sequoia (Darwin 25.x)
 ARCH               := arm64
 MACHINE_CONFIG     := ARM64
 KERNEL_CONFIG      := RELEASE

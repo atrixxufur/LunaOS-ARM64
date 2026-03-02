@@ -19,18 +19,35 @@ ROOTFS="${LUNA_ROOT}/build/rootfs"
 SOURCES="${LUNA_ROOT}/build/userland-src"
 PREFIX="${ROOTFS}/usr/local"
 JOBS="${JOBS:-$(sysctl -n hw.ncpu)}"
-MACOS_TAG="macos-262"
 APPLE_OSS="https://github.com/apple-oss-distributions"
 PUREDARWIN="https://github.com/PureDarwin"
 
+# Resolve real tags dynamically — "macos-262" was a fake tag, doesn't exist.
+find_latest_tag() {
+    local repo="$1" prefix="${2:-}"
+    git ls-remote --tags "${APPLE_OSS}/${repo}.git" 2>/dev/null \
+        | grep -o "refs/tags/[^{}]*" | sed "s|refs/tags/||" | grep -v "\^{}" \
+        | { [[ -n "$prefix" ]] && grep "^${prefix}" || cat; } \
+        | sort -V | tail -1 || echo "main"
+}
+
+DARWIN_MAJOR="$(uname -r | cut -d. -f1)"
+case "$DARWIN_MAJOR" in
+    24) LIBC_TAG="Libc-1534.81.1"  ;;  # macOS 14 Sonoma
+    25) LIBC_TAG="Libc-1668.0.2"   ;;  # macOS 15 Sequoia
+    26) LIBC_TAG="Libc-1709.0.2"   ;;  # macOS 26 Tahoe (approx)
+    *)  LIBC_TAG=$(find_latest_tag "Libc" "Libc-") ;;
+esac
+
 SKIP_WAYLAND="${SKIP_WAYLAND:-0}"
-[[ "$1" == "--skip-wayland" ]] && SKIP_WAYLAND=1
+[[ "${1:-}" == "--skip-wayland" ]] && SKIP_WAYLAND=1
 
 GREEN='\033[0;32m'; BLUE='\033[0;34m'; YELLOW='\033[1;33m'; NC='\033[0m'
 log()      { echo -e "${GREEN}[userland-arm64]${NC} $*"; }
 step()     { echo -e "${BLUE}[userland-arm64]${NC} ── $*"; }
 warn()     { echo -e "${YELLOW}[userland-arm64] WARN:${NC} $*"; }
 progress() { echo -e "${GREEN}[userland-arm64]${NC} [$1/10] $2"; }
+log "Userland Libc tag: ${LIBC_TAG} (Darwin ${DARWIN_MAJOR}.x)"
 
 # arm64: Homebrew in /opt/homebrew
 BREW_PREFIX="$(brew --prefix 2>/dev/null || echo /opt/homebrew)"
