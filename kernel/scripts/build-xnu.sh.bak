@@ -61,7 +61,7 @@ find_latest_tag() {
     local repo="$1" prefix="${2:-}"
     local url="${APPLE_OSS}/${repo}.git"
     local tag
-    tag=$(GIT_TERMINAL_PROMPT=0 GIT_TERMINAL_PROMPT=0 GIT_TERMINAL_PROMPT=0 GIT_TERMINAL_PROMPT=0 git ls-remote --tags "$url" 2>/dev/null \
+    tag=$(GIT_TERMINAL_PROMPT=0 GIT_TERMINAL_PROMPT=0 GIT_TERMINAL_PROMPT=0 git ls-remote --tags "$url" 2>/dev/null \
         | grep -o 'refs/tags/[^{}]*' \
         | sed 's|refs/tags/||' \
         | grep -v '\^{}' \
@@ -119,13 +119,13 @@ clone() {
     fi
 
     log "  Cloning ${name} @ ${tag}"
-    if GIT_TERMINAL_PROMPT=0 GIT_TERMINAL_PROMPT=0 GIT_TERMINAL_PROMPT=0 GIT_TERMINAL_PROMPT=0 git clone --depth 1 --branch "$tag" \
+    if GIT_TERMINAL_PROMPT=0 GIT_TERMINAL_PROMPT=0 GIT_TERMINAL_PROMPT=0 git clone --depth 1 --branch "$tag" \
            "${APPLE_OSS}/${name}.git" "$dest" --quiet 2>/dev/null; then
         return 0
     fi
     # Fallback: clone default branch then checkout tag
     warn "  --branch ${tag} failed, cloning HEAD then checking out tag"
-    GIT_TERMINAL_PROMPT=0 GIT_TERMINAL_PROMPT=0 GIT_TERMINAL_PROMPT=0 GIT_TERMINAL_PROMPT=0 git clone --depth 1 "${APPLE_OSS}/${name}.git" "$dest" --quiet
+    GIT_TERMINAL_PROMPT=0 GIT_TERMINAL_PROMPT=0 GIT_TERMINAL_PROMPT=0 git clone --depth 1 "${APPLE_OSS}/${name}.git" "$dest" --quiet
     git -C "$dest" fetch --tags --quiet 2>/dev/null || true
     git -C "$dest" checkout "$tag" --quiet 2>/dev/null || \
         warn "  ${name}: tag ${tag} not available, using HEAD"
@@ -156,12 +156,12 @@ if [[ -f "${DTRACE_SRC}/Makefile" ]]; then
         SRCROOT="$DTRACE_SRC" OBJROOT="${BUILD_DIR}/obj/dtrace" \
         DSTROOT="${BUILD_DIR}/dst" SDKROOT="$SDK" RC_ARCHS=arm64 \
         install 2>&1 | tail -5 || warn "dtrace make warnings (often safe)"
-export PATH="${BUILD_DIR}/../ctf-stubs:${PATH}"  # skip dtrace build (needs Apple-internal SDK)
-    export PATH="${BUILD_DIR}/../ctf-stubs:${PATH}"  # skip dtrace build (needs Apple-internal SDK)
+elif [[ -f "${DTRACE_SRC}/dtrace.xcodeproj/project.pbxproj" ]]; then
+    xcodebuild -project "${DTRACE_SRC}/dtrace.xcodeproj" \ CODE_SIGN_IDENTITY="" CODE_SIGNING_ALLOWED=NO
         -scheme ctfconvert -sdk macosx ARCHS=arm64 \
         OBJROOT="${BUILD_DIR}/obj/dtrace" DSTROOT="${BUILD_DIR}/dst" \
         install 2>&1 | grep -E "^(error:|=== BUILD)" || true
-    export PATH="${BUILD_DIR}/../ctf-stubs:${PATH}"  # skip dtrace build (needs Apple-internal SDK)
+    xcodebuild -project "${DTRACE_SRC}/dtrace.xcodeproj" \ CODE_SIGN_IDENTITY="" CODE_SIGNING_ALLOWED=NO
         -scheme ctfmerge -sdk macosx ARCHS=arm64 \
         OBJROOT="${BUILD_DIR}/obj/dtrace" DSTROOT="${BUILD_DIR}/dst" \
         install 2>&1 | grep -E "^(error:|=== BUILD)" || true
@@ -216,15 +216,13 @@ make -C "${SOURCES}/xnu" \
     SYMROOT="$XNU_SYM" \
     TOOLCHAINDIR="$TOOLCHAIN" \
     KERNEL_CONFIGS="RELEASE" \
-    MACHINE_CONFIGS="VMAPPLE" \
-    ARCH_CONFIGS="ARM64" \
+    MACHINE_CONFIGS="ARM64" \
     PLATFORM=MacOSX \
     BUILD_WERROR=0 \
     BUILD_LTO=0 \
     LUNAOS=1 \
     LUNAOS_ARCH=arm64 \
-    RC_DARWIN_KERNEL_VERSION=25.4.0 \
-    EXTRA_CFLAGS="-I$(pwd)/build/kernel-src/xnu/EXTERNAL_HEADERS" \
+    -j"$JOBS" \
     install 2>&1 | tee "${BUILD_DIR}/xnu-arm64-build.log" | \
     grep -E "(error:|^===|BUILD (SUCCEEDED|FAILED))" | head -30 || true
 

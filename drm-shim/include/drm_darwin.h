@@ -160,3 +160,11 @@ struct drm_mode_get_encoder {
  * IODRMShim will remain for display output (scanout) only.
  */
 #define DRM_DARWIN_FUTURE_AGX_DRIVER "agx"
+
+/* DRM capability defines */
+#define DRM_CAP_DUMB_BUFFER          0x1
+#define DRM_CAP_PRIME                0x5
+#define DRM_CAP_TIMESTAMP_MONOTONIC  0x6
+#define DRM_CAP_ADDFB2_MODIFIERS     0x10
+#define DRM_PRIME_CAP_IMPORT         0x1
+#define DRM_PRIME_CAP_EXPORT         0x2

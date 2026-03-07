@@ -46,6 +46,69 @@ clone() {
 step "libwayland"
 clone "https://gitlab.freedesktop.org/wayland/wayland.git" \
       "${BUILD_DIR}/wayland" "1.23.0"
+# Patch wayland for Darwin (replace epoll with kqueue)
+if [[ ! -f "${BUILD_DIR}/wayland/.darwin-patched" ]]; then
+    # Replace wayland-os.c epoll with kqueue stub
+    cat > "${BUILD_DIR}/wayland/src/wayland-os.c" << 'OSEOF'
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/stat.h>
+#include <stdio.h>
+#include "wayland-os.h"
+
+static int set_cloexec_or_close(int fd) {
+    if (fd == -1) return -1;
+    if (fcntl(fd, F_SETFD, FD_CLOEXEC) == -1) { close(fd); return -1; }
+    return fd;
+}
+int wl_os_socket_cloexec(int domain, int type, int protocol) {
+    return set_cloexec_or_close(socket(domain, type, protocol));
+}
+int wl_os_dupfd_cloexec(int fd, int minfd) {
+    int newfd = fcntl(fd, F_DUPFD, minfd);
+    return set_cloexec_or_close(newfd);
+}
+ssize_t wl_os_recvmsg_cloexec(int sockfd, struct msghdr *msg, int flags) {
+    return recvmsg(sockfd, msg, flags);
+}
+int wl_os_epoll_create_cloexec(void) {
+    /* Use a pipe as a dummy epoll fd — real event loop uses kqueue */
+    int pp[2];
+    if (pipe(pp) < 0) return -1;
+    close(pp[1]);
+    return pp[0];
+}
+int wl_os_accept_cloexec(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
+    return set_cloexec_or_close(accept(sockfd, addr, addrlen));
+}
+OSEOF
+
+    # Add MSG_DONTWAIT and CMSG_LEN compat to connection.c
+    sed -i '' 's/#include <sys\/epoll.h>/\/* epoll skipped on Darwin *\//'         "${BUILD_DIR}/wayland/src/connection.c" 2>/dev/null || true
+    sed -i '' 's/#include <sys\/epoll.h>/\/* epoll skipped on Darwin *\//'         "${BUILD_DIR}/wayland/src/wayland-os.c" 2>/dev/null || true
+
+    # Add Darwin compat header
+    cat > "${BUILD_DIR}/wayland/src/darwin-compat.h" << 'DEOF'
+#pragma once
+#include <sys/socket.h>
+#ifndef MSG_DONTWAIT
+#define MSG_DONTWAIT 0x80
+#endif
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0x20000
+#endif
+DEOF
+    sed -i '' 's/#include "wayland-os.h"/#include "wayland-os.h"
+#include "darwin-compat.h"/'         "${BUILD_DIR}/wayland/src/connection.c" 2>/dev/null || true
+
+    touch "${BUILD_DIR}/wayland/.darwin-patched"
+fi
+
 meson setup "${BUILD_DIR}/obj/wayland" "${BUILD_DIR}/wayland" \
     --prefix="$PREFIX" --buildtype=release \
     -Ddocumentation=false -Dtests=false \
