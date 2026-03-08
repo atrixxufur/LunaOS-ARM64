@@ -1,6 +1,6 @@
 # LunaOS arm64 — Darwin/XNU + Wayland for Apple Silicon
 
-A bootable Darwin OS targeting arm64 Apple Silicon (M1/M2/M3/M4 Macs),
+A bootable Darwin OS targeting arm64 Apple Silicon (M1/M2/M3/M4 Macs) and Snapdragon X-series/Nvidia NX series chips in the future,
 replacing Quartz Compositor with a custom Wayland stack.
 
 ## Architecture
